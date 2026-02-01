@@ -121,6 +121,13 @@ fn main() {
         // Fails on Cortex-M3 (thumbv7m), disable CPU detection on embedded
         builder.disable("rtcd", None);
     }
+    if env::var("TARGET").unwrap().starts_with("thumbv8m.main-") {
+        // Cortex-M33 (thumbv8m.main): The existing ARM assembly uses conditional
+        // instructions outside IT blocks which is invalid in ARMv8-M Thumb mode.
+        // Disable assembly and use C fallback. Also disable rtcd (no OS).
+        builder.disable("asm", None);
+        builder.disable("rtcd", None);
+    }
     if env::var("CARGO_CFG_TARGET_OS").unwrap() == "none" {
         let src_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("src");
         builder
