@@ -180,6 +180,9 @@ impl Decoder {
     /**
      * Construct decoder from requested sampling rate and number of channels.
      *
+     * **Warning:** This creates the ~17KB `OpusDecoder` struct on the stack.
+     * In stack-constrained environments, prefer [`Decoder::init_in_place`].
+     *
      * See also [`opus_decoder_get_size`] and [`opus_decoder_init`].
      */
     pub fn new(freq: SamplingRate, channels: Channels) -> Result<Self, DecoderError> {
@@ -205,6 +208,48 @@ impl Decoder {
             Err(DecoderError { error_code })
         } else {
             Ok(decoder)
+        }
+    }
+
+    /// Initialize a [`Decoder`] in-place at a pre-allocated pointer.
+    ///
+    /// This avoids placing the ~17KB `OpusDecoder` on the stack. The memory
+    /// at `ptr` must be valid, properly aligned, and at least
+    /// `size_of::<Decoder>()` bytes. It may be uninitialized or zeroed.
+    ///
+    /// On success the memory at `ptr` is fully initialized. On error the
+    /// memory is left in an indeterminate state and must not be read.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be valid for writes and properly aligned for `Decoder`.
+    /// - The caller must not read from `ptr` if this function returns `Err`.
+    pub unsafe fn init_in_place(
+        ptr: *mut Self,
+        freq: SamplingRate,
+        channels: Channels,
+    ) -> Result<(), DecoderError> {
+        if !cfg!(feature = "stereo") && channels == Channels::Stereo {
+            let error_code = OPUS_ALLOC_FAIL;
+            return Err(DecoderError { error_code });
+        }
+        // Write the channels field
+        core::ptr::write(&raw mut (*ptr).channels, channels);
+        // Zero-initialize the OpusDecoder (same as OpusDecoder::default())
+        core::ptr::write_bytes(&raw mut (*ptr).decoder, 0, 1);
+
+        let ch: c_int = channels.channels().into();
+        let size = opus_decoder_get_size(ch);
+        assert!(
+            core::mem::size_of::<OpusDecoder>() >= size.try_into().unwrap(),
+            "OpusDecoder struct is too small!"
+        );
+        // Initialize the decoder in-place on the heap
+        let error_code = opus_decoder_init(&mut (*ptr).decoder, freq.into(), ch);
+        if error_code != OPUS_OK.try_into().unwrap() {
+            Err(DecoderError { error_code })
+        } else {
+            Ok(())
         }
     }
 
