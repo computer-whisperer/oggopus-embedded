@@ -1,14 +1,9 @@
 #include <opus.h>
 
-/**
- * Struct big enough to contain OpusDecoder of opus-1.5.2 so it can be reserved
- * on stack.
- * <div rustbindgen replaces="OpusDecoder"></div>
+/*
+ * `OpusDecoder` is opaque in libopus. Rather than have bindgen synthesize a
+ * fixed-size stand-in from an annotation here (which broke under newer
+ * libclang), the type is blocklisted in build.rs and hand-written in lib.rs as
+ * a byte blob sized to hold opus-1.5.2's decoder. See OPUS_DECODER_SIZE_CH1 /
+ * OPUS_DECODER_SIZE_CH2 in lib.rs for the reserved sizes.
  */
-struct OpusDecoder {
-#ifdef OPUS_EMBEDDED_SYS_STEREO
-    char _unused[26580] __attribute__((aligned(4)));
-#else
-    char _unused[17860] __attribute__((aligned(4)));
-#endif
-};

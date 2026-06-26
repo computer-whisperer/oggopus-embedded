@@ -149,7 +149,17 @@ fn main() {
 
     let mut builder = bindgen::Builder::default()
         .header("src/decoder.h")
-        .allowlist_type("OpusDecoder")
+        // `OpusDecoder` is hand-written in lib.rs as a fixed-size byte blob
+        // rather than generated here. The previous approach reserved its size
+        // via a `<div rustbindgen replaces="OpusDecoder">` annotation in
+        // decoder.h, but bindgen's handling of that annotation is
+        // libclang-version-sensitive: under libclang >= 21 it is silently
+        // ignored and the type collapses to an opaque size-1 struct, which then
+        // fails the generated layout assertion (`size_of - 17860` underflows).
+        // Blocklisting keeps the FFI signatures referencing `OpusDecoder` while
+        // leaving its definition (and reserved size) pinned in Rust, so the
+        // build no longer depends on whichever libclang the host happens to ship.
+        .blocklist_type("OpusDecoder")
         .allowlist_function("opus_decode")
         .allowlist_function("opus_decoder_get_nb_samples")
         .allowlist_function("opus_decoder_get_size")
@@ -182,9 +192,10 @@ fn main() {
             .allowlist_function("opus_decoder_create")
             .allowlist_function("opus_decoder_destroy");
     }
-    if cfg!(feature = "stereo") {
-        builder = builder.clang_arg("-DOPUS_EMBEDDED_SYS_STEREO");
-    }
+    // Note: the `stereo` feature no longer affects bindgen output. It selects
+    // the reserved `OpusDecoder` size on the Rust side (see lib.rs); the C
+    // header bindgen parses is the same either way now that the struct is
+    // hand-written.
     let bindings = builder.generate().expect("Unable to generate bindings");
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
