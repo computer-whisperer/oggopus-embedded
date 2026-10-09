@@ -242,7 +242,7 @@ impl Decoder {
         let size = opus_decoder_get_size(ch);
         assert!(
             core::mem::size_of::<OpusDecoder>() >= size.try_into().unwrap(),
-            "OpusDecoder struct is too small!"
+            "OpusDecoder struct is too small! need {size}"
         );
         // Initialize the decoder in-place on the heap
         let error_code = opus_decoder_init(&mut (*ptr).decoder, freq.into(), ch);

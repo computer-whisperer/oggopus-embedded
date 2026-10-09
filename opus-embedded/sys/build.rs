@@ -122,11 +122,33 @@ fn main() {
         builder.disable("rtcd", None);
     }
     if env::var("TARGET").unwrap().starts_with("thumbv8m.main-") {
-        // Cortex-M33 (thumbv8m.main): The existing ARM assembly uses conditional
-        // instructions outside IT blocks which is invalid in ARMv8-M Thumb mode.
-        // Disable assembly and use C fallback. Also disable rtcd (no OS).
-        builder.disable("asm", None);
+        // Cortex-M33 (thumbv8m.main). libopus has two kinds of ARM assembly:
+        // the external .s files (celt_pitch_xcorr_arm.s), which use conditional
+        // instructions outside IT blocks and do not assemble for ARMv8-M, and
+        // the inline EDSP/Media macros (SILK MAC macros, CELT fixed-point ops,
+        // KISS FFT butterflies), which are plain DSP-extension instructions the
+        // M33 has. configure only emits the external files when it finds perl,
+        // so hiding perl keeps the inline asm and drops the .s files. The
+        // compiler must also be told about the DSP extension (cc-rs passes bare
+        // -march=armv8-m.main) or the qadd/shadd8 probes fail.
+        //
+        // Measured on an RP2350 at 150 MHz decoding 48 kHz mono (2026-10-09,
+        // CPU time per second of audio): plain C with cc-rs's defaults 194 ms;
+        // +dsp and -fomit-frame-pointer 165 ms; plus the inline asm 150 ms. A
+        // float build (FPv5-SP) was 282 ms, so fixed-point stays.
+        //
+        // OPUS_EMBEDDED_ASM=0 rebuilds with the C fallbacks for comparison.
+        println!("cargo:rerun-if-env-changed=OPUS_EMBEDDED_ASM");
         builder.disable("rtcd", None);
+        builder.disable("intrinsics", None);
+        builder.cflag("-march=armv8-m.main+dsp+fp");
+        // cc-rs adds -fno-omit-frame-pointer, which pins r7 in every hot loop.
+        builder.cflag("-fomit-frame-pointer");
+        if env::var("OPUS_EMBEDDED_ASM").map(|v| v != "0").unwrap_or(true) {
+            builder.env("ac_cv_prog_HAVE_PERL", "no");
+        } else {
+            builder.disable("asm", None);
+        }
     }
     if env::var("CARGO_CFG_TARGET_OS").unwrap() == "none" {
         let src_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("src");
